@@ -115,28 +115,66 @@ function drawField(ctx, G) {
   ctx.beginPath();
   ctx.rect(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
   ctx.clip();
-  // Floor checker
+  // Floor: checker base, then a per-tile deterministic variation so the
+  // boards read as worn stone, a faint grout grid, and a subtle tint per
+  // room zone so each wing of the house feels like a different place.
+  const zoneTint = [
+    ['rgba(150, 110, 60, 0.10)', 'rgba(0, 0, 0, 0)', 'rgba(70, 100, 140, 0.08)'],
+    ['rgba(120, 100, 50, 0.08)', 'rgba(140, 110, 60, 0.10)', 'rgba(60, 90, 120, 0.08)'],
+    ['rgba(140, 70, 40, 0.10)', 'rgba(0, 0, 0, 0)', 'rgba(120, 60, 40, 0.08)'],
+  ][G.levelIndex];
   for (let cy = 0; cy < ROWS; cy++) {
     for (let cx = 0; cx < COLS; cx++) {
       const x = FIELD_X + cx * TILE;
       const y = FIELD_Y + cy * TILE;
       ctx.fillStyle = (cx + cy) % 2 === 0 ? COLORS.floorA : COLORS.floorB;
       ctx.fillRect(x, y, TILE, TILE);
+      const h = (((cx * 73856093) ^ (cy * 19349663) ^ (G.levelIndex * 83492791)) >>> 0) % 100;
+      if (h < 18) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        ctx.fillRect(x, y, TILE, TILE);
+      } else if (h < 36) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+        ctx.fillRect(x, y, TILE, TILE);
+      }
+      const zone = cx < 10 ? 0 : cx < 21 ? 1 : 2;
+      if (zoneTint[zone] !== 'rgba(0, 0, 0, 0)') {
+        ctx.fillStyle = zoneTint[zone];
+        ctx.fillRect(x, y, TILE, TILE);
+      }
+      // Faint floor medallion at a few corridor crossings, drawn under all.
+      if (p.rows[cy][cx] === '.' && cx % 8 === 4 && cy % 6 === 3) {
+        ctx.strokeStyle = 'rgba(232, 236, 245, 0.10)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(x + TILE / 2, y + TILE / 2, 8, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
-  // Carpet: one designed room per night, so the floor reads as a place.
-  const carpet = [
-    { x: 11, y: 7, w: 10, h: 6, c: 'rgba(146, 52, 58, 0.30)' },
-    { x: 22, y: 1, w: 9, h: 5, c: 'rgba(42, 110, 120, 0.30)' },
-    { x: 11, y: 14, w: 10, h: 5, c: 'rgba(96, 62, 140, 0.30)' },
-  ][G.levelIndex];
-  ctx.fillStyle = carpet.c;
-  ctx.fillRect(FIELD_X + carpet.x * TILE, FIELD_Y + carpet.y * TILE, carpet.w * TILE, carpet.h * TILE);
-  ctx.strokeStyle = 'rgba(232, 236, 245, 0.25)';
+  // Grout grid over the whole floor.
+  ctx.strokeStyle = 'rgba(10, 14, 26, 0.35)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(FIELD_X + carpet.x * TILE + 3, FIELD_Y + carpet.y * TILE + 3,
-    carpet.w * TILE - 6, carpet.h * TILE - 6);
+  ctx.beginPath();
+  for (let cx = 0; cx <= COLS; cx++) {
+    ctx.moveTo(FIELD_X + cx * TILE + 0.5, FIELD_Y);
+    ctx.lineTo(FIELD_X + cx * TILE + 0.5, FIELD_Y + FIELD_H);
+  }
+  for (let cy = 0; cy <= ROWS; cy++) {
+    ctx.moveTo(FIELD_X, FIELD_Y + cy * TILE + 0.5);
+    ctx.lineTo(FIELD_X + FIELD_W, FIELD_Y + cy * TILE + 0.5);
+  }
+  ctx.stroke();
+  // Rugs: one designed room per night, now a real woven rug — border bands,
+  // a diamond motif down the middle and fringe on the short ends.
+  const rug = [
+    { x: 11, y: 7, w: 10, h: 6, c: 'rgba(146, 52, 58, 0.34)', a: 'rgba(255, 205, 150, 0.55)' },
+    { x: 22, y: 1, w: 9, h: 5, c: 'rgba(42, 110, 120, 0.34)', a: 'rgba(190, 235, 220, 0.55)' },
+    { x: 11, y: 14, w: 10, h: 5, c: 'rgba(96, 62, 140, 0.34)', a: 'rgba(225, 200, 255, 0.55)' },
+  ][G.levelIndex];
+  drawRug(ctx, rug);
   // Hedges, crates, walls
+  const tileCh = (cx, cy) => (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) ? '#' : p.rows[cy][cx];
   for (let cy = 0; cy < ROWS; cy++) {
     for (let cx = 0; cx < COLS; cx++) {
       const x = FIELD_X + cx * TILE;
@@ -149,11 +187,36 @@ function drawField(ctx, G) {
         ctx.fillRect(x, y, TILE, 22);
         ctx.fillStyle = COLORS.wallTop;
         ctx.fillRect(x, y, TILE, 4);
+        // Wall dressing: a painting, a bookshelf or a sconce on some wall
+        // faces (a wall tile with open floor beside it), picked by a fixed
+        // hash so the dressing never moves between runs.
+        const face = tileCh(cx - 1, cy) !== '#' || tileCh(cx + 1, cy) !== '#' ||
+          tileCh(cx, cy - 1) !== '#' || tileCh(cx, cy + 1) !== '#';
+        if (face) {
+          const pick = (cx * 31 + cy * 17 + G.levelIndex * 7) % 8;
+          if (pick === 0) drawWallPainting(ctx, x, y, G.levelIndex);
+          else if (pick === 1) drawWallShelf(ctx, x, y, cx, cy);
+          else if (pick === 2) drawWallSconce(ctx, x, y);
+        }
       } else if (t === 'H') {
         drawHedge(ctx, x, y);
       } else if (t === 'C') {
         drawCrate(ctx, x, y);
       }
+    }
+  }
+  // Soft shadow where a wall band meets the floor below it.
+  for (let cy = 0; cy < ROWS; cy++) {
+    for (let cx = 0; cx < COLS; cx++) {
+      if (p.rows[cy][cx] !== '#') continue;
+      if (cy + 1 >= ROWS || p.rows[cy + 1][cx] === '#') continue;
+      const x = FIELD_X + cx * TILE;
+      const y = FIELD_Y + (cy + 1) * TILE;
+      const sg = ctx.createLinearGradient(0, y, 0, y + 10);
+      sg.addColorStop(0, 'rgba(0, 0, 0, 0.28)');
+      sg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = sg;
+      ctx.fillRect(x, y, TILE, 10);
     }
   }
   // Lamp pools of light (lit lamps) — the light/shadow read.
@@ -167,6 +230,15 @@ function drawField(ctx, G) {
     ctx.fillStyle = g;
     ctx.fillRect(lx - LAMP_RADIUS, ly - LAMP_RADIUS, LAMP_RADIUS * 2, LAMP_RADIUS * 2);
   }
+  // Vignette: the room darkens toward the edges, so the lamp pools and the
+  // cones read as light in a dark house. Drawn under cones and actors.
+  const vg = ctx.createRadialGradient(
+    FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2, FIELD_H * 0.35,
+    FIELD_X + FIELD_W / 2, FIELD_Y + FIELD_H / 2, FIELD_W * 0.62);
+  vg.addColorStop(0, 'rgba(5, 7, 14, 0)');
+  vg.addColorStop(1, 'rgba(5, 7, 14, 0.30)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(FIELD_X, FIELD_Y, FIELD_W, FIELD_H);
   // Vision cones (under the guards, over the floor)
   for (const guard of G.guards) {
     const poly = conePolygon(p, guard.x, guard.y, guard.angle, GUARD_VIEW_RANGE, GUARD_VIEW_HALF_ANGLE);
@@ -286,6 +358,96 @@ function drawField(ctx, G) {
   ctx.strokeStyle = '#2a3552';
   ctx.lineWidth = 2;
   ctx.strokeRect(FIELD_X - 1, FIELD_Y - 1, FIELD_W + 2, FIELD_H + 2);
+}
+
+function drawRug(ctx, rug) {
+  const x = FIELD_X + rug.x * TILE;
+  const y = FIELD_Y + rug.y * TILE;
+  const w = rug.w * TILE;
+  const h = rug.h * TILE;
+  ctx.fillStyle = rug.c;
+  ctx.fillRect(x, y, w, h);
+  // Woven border: an outer band and a fine inner line.
+  ctx.strokeStyle = rug.a;
+  ctx.globalAlpha = 0.7;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 5, y + 5, w - 10, h - 10);
+  ctx.globalAlpha = 0.35;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 11, y + 11, w - 22, h - 22);
+  ctx.globalAlpha = 1;
+  // Diamond motif down the middle of the rug.
+  const n = Math.max(2, Math.floor(w / 48));
+  for (let i = 0; i < n; i++) {
+    const dx = x + w / 2 + (i - (n - 1) / 2) * 48;
+    const dy = y + h / 2;
+    ctx.save();
+    ctx.translate(dx, dy);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = rug.a;
+    ctx.globalAlpha = 0.55;
+    ctx.fillRect(-6, -6, 12, 12);
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = rug.a;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-10, -10, 20, 20);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+  // Fringe on the two short ends.
+  ctx.strokeStyle = rug.a;
+  ctx.globalAlpha = 0.6;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let fy = y + 9; fy < y + h - 4; fy += 8) {
+    ctx.moveTo(x - 4, fy);
+    ctx.lineTo(x, fy);
+    ctx.moveTo(x + w, fy);
+    ctx.lineTo(x + w + 4, fy);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawWallPainting(ctx, x, y, levelIndex) {
+  const canvas = ['#7a6a4a', '#4a7a72', '#7a4a42'][levelIndex];
+  ctx.fillStyle = '#8a6b3f';
+  ctx.fillRect(x + 6, y + 8, 20, 14);
+  ctx.fillStyle = canvas;
+  ctx.fillRect(x + 8, y + 10, 16, 10);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x + 9, y + 19);
+  ctx.lineTo(x + 15, y + 11);
+  ctx.stroke();
+}
+
+function drawWallShelf(ctx, x, y, cx, cy) {
+  const spines = ['#8a4a3a', '#4a6a8a', '#6a8a4a', '#a08a3a', '#7a5a8a'];
+  ctx.fillStyle = '#4a3620';
+  ctx.fillRect(x + 5, y + 7, 22, 18);
+  ctx.fillStyle = '#2e2113';
+  ctx.fillRect(x + 5, y + 15, 22, 1);
+  ctx.fillRect(x + 5, y + 23, 22, 1);
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = spines[(cx + cy + i) % spines.length];
+    ctx.fillRect(x + 7 + i * 4, y + 9, 3, 6);
+    ctx.fillRect(x + 7 + i * 4, y + 17, 3, 6);
+  }
+}
+
+function drawWallSconce(ctx, x, y) {
+  ctx.fillStyle = 'rgba(255, 210, 122, 0.22)';
+  ctx.beginPath();
+  ctx.arc(x + 16, y + 12, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#3a466b';
+  ctx.fillRect(x + 14, y + 16, 4, 8);
+  ctx.fillStyle = '#ffd27a';
+  ctx.beginPath();
+  ctx.arc(x + 16, y + 12, 3, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawHedge(ctx, x, y) {
@@ -525,7 +687,7 @@ function drawRightPanel(ctx, G) {
   label(ctx, px, y, 'TACTICAL MAP', 11, COLORS.textDim, '700');
   y += 8;
   const mw = w - 28;
-  const mh = 70;
+  const mh = 64;
   ctx.fillStyle = '#0b0f1c';
   ctx.fillRect(px, y, mw, mh);
   ctx.strokeStyle = COLORS.panelEdge;
@@ -552,7 +714,7 @@ function drawRightPanel(ctx, G) {
   ctx.beginPath();
   ctx.arc(px + G.player.x * sx, y + G.player.y * sy, 3.5, 0, Math.PI * 2);
   ctx.fill();
-  y += mh + 8;
+  y += mh + 14;
   // Legend
   label(ctx, px, y, 'LEGEND', 11, COLORS.textDim, '700');
   y += 15;
