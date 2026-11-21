@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NIGHTJAR — A Quiet Heist in Three Nights</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #070a12; height: 100%; }
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  #wrap { width: min(1280px, 100vw); }
+  canvas { display: block; width: 100%; height: auto; background: #0b0f1c;
+    image-rendering: auto; outline: none; }
+  #note { color: #5a6a8c; font: 12px system-ui, sans-serif; text-align: center;
+    padding: 8px 0 0 0; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="1280" height="720" tabindex="0"></canvas>
+  <div id="note">NIGHTJAR — a quiet heist in three nights · WASD move · SHIFT sneak · SPACE sprint · C crouch · Q / CLICK throw a pebble · E douse a lamp · R retry · ESC pause · M mute</div>
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
