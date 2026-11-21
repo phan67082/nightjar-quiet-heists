@@ -11,6 +11,15 @@ const TOP_H = 52;
 const FIELD_W = COLS * TILE;
 const FIELD_H = ROWS * TILE;
 
+// Brass name plaques mounted on the two wall bands, one per room wing —
+// the house reads as named places (like a real archive), not a bare grid.
+// Row 6 plaque sits mid-band; row 13 sits right of the lower doorway (cx 16).
+const PLAQUES = [
+  [{ cx: 15, cy: 6, text: 'THE STACKS' }, { cx: 24, cy: 13, text: 'READING ROOM' }],
+  [{ cx: 15, cy: 6, text: 'THE BRASS HALLS' }, { cx: 24, cy: 13, text: 'CLOCKWORK WING' }],
+  [{ cx: 15, cy: 6, text: 'THE EMBER VAULT' }, { cx: 24, cy: 13, text: 'THE LANTERN ROW' }],
+];
+
 function rr(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -187,16 +196,23 @@ function drawField(ctx, G) {
         ctx.fillRect(x, y, TILE, 22);
         ctx.fillStyle = COLORS.wallTop;
         ctx.fillRect(x, y, TILE, 4);
-        // Wall dressing: a painting, a bookshelf or a sconce on some wall
-        // faces (a wall tile with open floor beside it), picked by a fixed
-        // hash so the dressing never moves between runs.
-        const face = tileCh(cx - 1, cy) !== '#' || tileCh(cx + 1, cy) !== '#' ||
-          tileCh(cx, cy - 1) !== '#' || tileCh(cx, cy + 1) !== '#';
-        if (face) {
-          const pick = (cx * 31 + cy * 17 + G.levelIndex * 7) % 8;
-          if (pick === 0) drawWallPainting(ctx, x, y, G.levelIndex);
-          else if (pick === 1) drawWallShelf(ctx, x, y, cx, cy);
-          else if (pick === 2) drawWallSconce(ctx, x, y);
+        // A name plaque takes this tile: no other dressing under it, and the
+        // plaque itself is drawn in a later pass (after the wall loop) so no
+        // neighbouring wall tile paints over its wide face.
+        if (isPlaqueTile(G.levelIndex, cx, cy)) {
+          // drawn later
+        } else {
+          // Wall dressing: a painting, a bookshelf or a sconce on some wall
+          // faces (a wall tile with open floor beside it), picked by a fixed
+          // hash so the dressing never moves between runs.
+          const face = tileCh(cx - 1, cy) !== '#' || tileCh(cx + 1, cy) !== '#' ||
+            tileCh(cx, cy - 1) !== '#' || tileCh(cx, cy + 1) !== '#';
+          if (face) {
+            const pick = (cx * 31 + cy * 17 + G.levelIndex * 7) % 8;
+            if (pick === 0) drawWallPainting(ctx, x, y, G.levelIndex);
+            else if (pick === 1) drawWallShelf(ctx, x, y, cx, cy);
+            else if (pick === 2) drawWallSconce(ctx, x, y);
+          }
         }
       } else if (t === 'H') {
         drawHedge(ctx, x, y);
@@ -218,6 +234,10 @@ function drawField(ctx, G) {
       ctx.fillStyle = sg;
       ctx.fillRect(x, y, TILE, 10);
     }
+  }
+  // Name plaques, drawn after the walls so no later wall tile paints over them.
+  for (const q of PLAQUES[G.levelIndex]) {
+    drawPlaque(ctx, FIELD_X + q.cx * TILE, FIELD_Y + q.cy * TILE, q.text);
   }
   // Lamp pools of light (lit lamps) — the light/shadow read.
   for (const lamp of p.lamps) {
@@ -407,6 +427,28 @@ function drawRug(ctx, rug) {
   }
   ctx.stroke();
   ctx.globalAlpha = 1;
+}
+
+function isPlaqueTile(levelIndex, cx, cy) {
+  return PLAQUES[levelIndex].some(q => q.cx === cx && q.cy === cy);
+}
+
+function drawPlaque(ctx, x, y, text) {
+  ctx.font = '700 9px system-ui, sans-serif';
+  const w = ctx.measureText(text).width + 14;
+  const px = x + TILE / 2 - w / 2;
+  ctx.fillStyle = '#0b0f1c';
+  rr(ctx, px, y + 8, w, 16, 3);
+  ctx.fill();
+  ctx.strokeStyle = '#8a6b3f';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = '#d8c08a';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + TILE / 2, y + 16);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
 }
 
 function drawWallPainting(ctx, x, y, levelIndex) {
